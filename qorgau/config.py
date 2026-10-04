@@ -25,7 +25,7 @@ class Settings:
     multiple_seconds: float = 2.0
     phone_seconds: float = 1.5
     head_seconds: float = 3.0
-    window_seconds: float = 2.0
+    window_seconds: float = 0.0
     head_angle: float = 30.0
     save_evidence: bool = False
 
@@ -44,9 +44,11 @@ class Settings:
             raise ValueError("Номер камеры должен быть от 0 до 9")
         if not 0.1 <= self.confidence <= 0.95 or not 0.1 <= self.phone_confidence <= 0.95 or not 10 <= self.head_angle <= 80:
             raise ValueError("Некорректная уверенность или угол")
-        for key in ("absence_seconds", "multiple_seconds", "phone_seconds", "head_seconds", "window_seconds"):
+        for key in ("absence_seconds", "multiple_seconds", "phone_seconds", "head_seconds"):
             if not 0.5 <= getattr(self, key) <= 60:
                 raise ValueError("Порог должен быть от 0.5 до 60 секунд")
+        if not 0 <= self.window_seconds <= 60:
+            raise ValueError("Задержка окна должна быть от 0 до 60 секунд")
         if not isinstance(self.save_evidence, bool):
             raise ValueError("Некорректное значение сохранения кадров")
 

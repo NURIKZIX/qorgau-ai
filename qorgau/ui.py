@@ -9,9 +9,10 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
     QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox,
     QStackedWidget, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget)
 from .config import Settings, data_root
+from . import __version__
 from .engine import Event, EventEngine, Observation, TITLES, risk_score
 from .reports import REVIEWS, STATUSES, clock, export_report, local_time
-from .security import SecurityMonitor
+from .security import KeyboardMonitor, SecurityMonitor
 from .worker import CameraWorker
 
 
@@ -123,6 +124,8 @@ class MainWindow(QMainWindow):
         self.raw_frame = None
         self.last_observation = Observation(camera_ok=False)
         self.security = SecurityMonitor()
+        self.keyboard = KeyboardMonitor()
+        self.demo_shortcuts = set()
         self.selected_session = None
         self.displayed_sessions = []
         self.bind_countdown = 0
@@ -163,7 +166,7 @@ class MainWindow(QMainWindow):
         side.addStretch()
         side.addWidget(label("Локальная обработка\nYOLO11n + MediaPipe"))
         side.addSpacing(10)
-        side.addWidget(label("v1.0  /  Windows", "sideTag"))
+        side.addWidget(label(f"v{__version__}  /  Windows", "sideTag"))
         layout.addWidget(sidebar)
         content = QWidget()
         content.setObjectName("content")
@@ -267,8 +270,10 @@ class MainWindow(QMainWindow):
         self.bind_button = button("Закрепить окно экзамена", self.bind_window)
         self.bind_button.setToolTip("После нажатия переключитесь в окно экзамена за 5 секунд")
         controls_layout.addWidget(self.bind_button)
-        self.window_info = label("Окно не закреплено · контроль окон выключен", "muted")
+        self.window_info = label("Контроль выхода из QORGAU AI · можно закрепить окно экзамена", "muted")
         controls_layout.addWidget(self.window_info)
+        self.keyboard_info = label("Alt+Tab · Ctrl+C/V · Print Screen — только во время экзамена", "muted")
+        controls_layout.addWidget(self.keyboard_info)
         self.start_button = button("Начать экзамен  →", self.start_session, "primary")
         self.start_button.setEnabled(False)
         controls_layout.addWidget(self.start_button)
@@ -350,7 +355,7 @@ class MainWindow(QMainWindow):
             ("multiple_seconds", "Несколько людей — задержка, с", 0.5, 60, 0.5),
             ("absence_seconds", "Отсутствие — задержка, с", 0.5, 60, 0.5),
             ("head_seconds", "Поворот головы — задержка, с", 0.5, 60, 0.5),
-            ("window_seconds", "Переключение окна — задержка, с", 0.5, 60, 0.5)]
+            ("window_seconds", "Переключение окна — задержка, с", 0, 60, 0.5)]
         for key, caption, minimum, maximum, step in options:
             field = QSpinBox() if key == "camera_index" else QDoubleSpinBox()
             field.setRange(minimum, maximum)
@@ -381,11 +386,12 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 8, 0)
         sections = [
             ("01 / Подготовьте сессию", "Введите участника и название экзамена. Выберите реальную камеру и нажмите «Подключить камеру». Дождитесь видеопотока. Камера и обе модели должны работать до начала сессии."),
-            ("02 / Закрепите окно", "Нажмите «Закрепить окно экзамена» и за 5 секунд перейдите в нужное окно. Затем вернитесь в QORGAU AI и начните экзамен. После начала перейдите в окно экзамена. Любое другое активное окно, включая QORGAU AI, считается переключением. Вкладки внутри одного окна браузера не отслеживаются. Без привязки контроль окон выключен."),
+            ("02 / Выберите окно", "Без привязки контролируется выход из QORGAU AI. Для экзамена во внешней программе нажмите «Закрепить окно экзамена» и за 5 секунд перейдите в нужное окно. Вернитесь в QORGAU AI, начните экзамен и перейдите в закреплённое окно. Любое другое активное окно считается переключением. Окна проверяются каждые 250 мс; вкладки внутри одного окна браузера не отслеживаются. Задержка окна настраивается, 0 — без дополнительного ожидания."),
+            ("Контроль клавиш", "Во время реальной сессии фиксируются Alt+Tab, Ctrl+C, Ctrl+V и Print Screen в любой программе текущего рабочего стола Windows. Нажатие записывается сразу; удержание клавиши не создаёт повторов. Текст, буфер обмена и снимки экрана не собираются; сочетания не блокируются. Для проверки начните экзамен и попробуйте сочетания, затем откройте журнал событий."),
             ("03 / Наблюдайте", "YOLO11n обнаруживает людей и телефоны, MediaPipe — лица и угол головы. Событие появляется только после установленной задержки. Непрерывное наблюдение создаёт один эпизод; возврат к норме закрывает его. Потеря камеры записывается как техническое событие и не считается отсутствием человека."),
             ("04 / Проверьте и экспортируйте", "Завершите экзамен, откройте «Сессии и отчёты», выберите сессию. Подтвердите или отклоните каждый эпизод и добавьте комментарий. Экспорт доступен в HTML, CSV и JSON. HTML можно открыть в браузере и распечатать или сохранить в PDF."),
-            ("Индекс проверки", "Вес каждого эпизода: телефон 20, несколько людей 15, отсутствие 10, поворот головы 5, переключение окна 10. Сумма ограничена 100; технические события дают 0. Это приоритет просмотра, не вероятность нарушения. Исходный индекс включает отклонённые события; решения проверяющего показаны отдельно."),
-            ("Демонстрация и хранение", "Деморежим запускает синтетический 48-секундный цикл всех пяти событий без камеры и моделей. Такие сессии помечены ДЕМО в истории и отчёте. Рабочие данные: %LOCALAPPDATA%\\QorgauAI. Приложение не отправляет видео или журнал в сеть и не перехватывает клавиатуру, экран или буфер обмена.")]
+            ("Индекс проверки", "Вес события: телефон 20, несколько людей 15, отсутствие 10, поворот головы 5, окно 10, Alt+Tab 5, Ctrl+C 5, Ctrl+V 5, Print Screen 10. Alt+Tab и выход из окна могут регистрироваться одновременно. Сумма ограничена 100; технические события дают 0. Это приоритет просмотра, не вероятность нарушения. Исходный индекс включает отклонённые события; решения проверяющего показаны отдельно."),
+            ("Демонстрация и хранение", "Деморежим запускает синтетический 48-секундный цикл девяти событий без камеры, моделей и перехвата клавиш. Такие сессии помечены ДЕМО в истории и отчёте. Рабочие данные: %LOCALAPPDATA%\\QorgauAI. Приложение не отправляет видео или журнал в сеть. В реальной сессии записываются только указанные сочетания клавиш.")]
         for title, text in sections:
             widget, box = card(title)
             box.addWidget(label(text))
@@ -398,7 +404,8 @@ class MainWindow(QMainWindow):
         demo = self.mode.currentIndex() == 1
         self.connect_button.setText("Запустить демонстрацию" if demo else "Подключить камеру")
         self.bind_button.setEnabled(not demo)
-        self.window_info.setText("ДЕМО · переключение окна синтетическое" if demo else (self.security.title or "Окно не закреплено · контроль окон выключен"))
+        self.window_info.setText("ДЕМО · переключение окна синтетическое" if demo else (f"Контроль окна: {self.security.title}" if self.security.external else "Контроль выхода из QORGAU AI · можно закрепить окно экзамена"))
+        self.keyboard_info.setText("ДЕМО · сочетания клавиш синтетические" if demo else "Alt+Tab · Ctrl+C/V · Print Screen — только во время экзамена")
 
     def connect_camera(self):
         if self.worker is not None:
@@ -451,6 +458,15 @@ class MainWindow(QMainWindow):
         if self.mode.currentIndex() == 0:
             observation.window_away = self.security.away()
         elapsed = time.monotonic() - self.session_start
+        if self.mode.currentIndex() == 1:
+            # Same point events as live monitoring, without installing a hook.
+            for cycle in range(int(elapsed // 48) + 1):
+                for at, kind, chord in ((8, "copy", "Ctrl+C"), (18, "paste", "Ctrl+V"), (35, "screenshot", "Print Screen"), (42, "alt_tab", "Alt+Tab")):
+                    moment = cycle * 48 + at
+                    key = (cycle, kind)
+                    if moment <= elapsed and key not in self.demo_shortcuts:
+                        self.demo_shortcuts.add(key)
+                        self.record_shortcut(kind, chord, moment, demo=True)
         opened, closed = self.engine.update(observation, elapsed)
         for event in opened:
             if self.settings.save_evidence and self.raw_frame is not None and event.kind in ("phone", "multiple", "absence", "head") and self.mode.currentIndex() == 0:
@@ -484,11 +500,24 @@ class MainWindow(QMainWindow):
         self.engine = EventEngine(self.settings)
         self.session_events = []
         self.session_start = time.monotonic()
+        self.demo_shortcuts.clear()
+        self.keyboard_error_reported = False
+        if mode == "live":
+            self.security.bind_application(self.winId())
+            self.window_info.setText(f"Контроль окна: {self.security.title}")
+            try:
+                self.keyboard.start()
+                self.keyboard_info.setText("● Клавиши: Alt+Tab · Ctrl+C/V · Print Screen")
+            except RuntimeError as error:
+                self.keyboard_error_reported = True
+                self.keyboard_info.setText(str(error))
+                event = Event("system", 0, 0, str(error))
+                self.db.add_event(self.session_id, event)
+                self.session_events.append(event)
         self.metrics[0].setText("00:00:00")
         self.metric_captions[0].setText("Наблюдение активно")
         self.refresh_journal(0)
         self.last_heartbeat = 0
-        self.event_table.setRowCount(0)
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.connect_button.setEnabled(False)
@@ -496,10 +525,25 @@ class MainWindow(QMainWindow):
         self.candidate.setEnabled(False)
         self.exam.setEnabled(False)
         self.badge.setText("●  ДЕМО СЕССИЯ" if mode == "demo" else "●  ЭКЗАМЕН ИДЁТ")
-        self.status.setText(f"Сессия #{self.session_id} записывается локально." + (" Контроль окон выключен: окно не закреплено." if mode == "live" and self.security.target is None else ""))
+        self.status.setText(f"Сессия #{self.session_id} записывается локально. " + ("Записываются только указанные сочетания клавиш; текст и буфер обмена не читаются." if mode == "live" else "Демонстрационные события синтетические."))
+
+    def record_shortcut(self, kind, chord, elapsed, demo=False):
+        if self.session_id is None:
+            return
+        detail = f"{'ДЕМО · ' if demo else ''}Нажато {chord}; содержимое буфера и экрана не фиксируется"
+        event = Event(kind, max(0.0, elapsed), max(0.0, elapsed), detail)
+        self.db.add_event(self.session_id, event)
+        self.session_events.append(event)
+        self.refresh_journal(max(0.0, elapsed))
+
+    def drain_shortcuts(self):
+        for shortcut in self.keyboard.drain():
+            self.record_shortcut(shortcut.kind, shortcut.chord, shortcut.at - self.session_start)
 
     def stop_session(self, checked=False, interrupted=False):
+        self.keyboard.stop()
         if self.session_id is not None:
+            self.drain_shortcuts()
             elapsed = time.monotonic()-self.session_start
             for event in self.engine.finish(elapsed):
                 self.db.close_event(event)
@@ -511,6 +555,7 @@ class MainWindow(QMainWindow):
             self.metric_captions[0].setText("Сессия прервана" if interrupted else "Сессия завершена")
             self.selected_session = ended_id
             self.status.setText(f"Сессия #{ended_id} {'прервана' if interrupted else 'завершена'}. Откройте «Сессии и отчёты» для проверки и экспорта.")
+        self.keyboard_info.setText("Контроль клавиш остановлен")
         self.stop_preview()
         self.stop_button.setEnabled(False)
         self.candidate.setEnabled(True)
@@ -577,6 +622,15 @@ class MainWindow(QMainWindow):
         if self.session_id is None:
             return
         elapsed = time.monotonic()-self.session_start
+        if self.mode.currentIndex() == 0:
+            self.drain_shortcuts()
+            if self.keyboard.error and not getattr(self, "keyboard_error_reported", False):
+                self.keyboard_error_reported = True
+                message = f"Мониторинг клавиш недоступен: {self.keyboard.error}"
+                self.keyboard_info.setText(message)
+                event = Event("system", elapsed, elapsed, message)
+                self.db.add_event(self.session_id, event)
+                self.session_events.append(event)
         self.metrics[0].setText(clock(elapsed))
         if self.mode.currentIndex() == 0 and time.monotonic()-self.last_frame > 2:
             self.consume_observation(Observation(camera_ok=False))

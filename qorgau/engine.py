@@ -6,8 +6,11 @@ TITLES = {
     "absence": "Человек отсутствует", "head": "Поворот головы",
     "window": "Переключение окна", "camera": "Камера недоступна",
     "system": "Ошибка мониторинга",
+    "alt_tab": "Alt+Tab", "copy": "Копирование · Ctrl+C",
+    "paste": "Вставка · Ctrl+V", "screenshot": "Print Screen",
 }
-WEIGHTS = {"phone": 20, "multiple": 15, "absence": 10, "head": 5, "window": 10, "camera": 0, "system": 0}
+WEIGHTS = {"phone": 20, "multiple": 15, "absence": 10, "head": 5, "window": 10,
+           "alt_tab": 5, "copy": 5, "paste": 5, "screenshot": 10, "camera": 0, "system": 0}
 
 
 @dataclass

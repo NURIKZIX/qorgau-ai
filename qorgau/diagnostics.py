@@ -24,6 +24,7 @@ def run(output: Path):
         from .engine import Event, EventEngine, Observation
         from .reports import export_report
         from .storage import Database
+        from .security import KeyboardMonitor, Shortcut
         from .ui import MainWindow
         from .vision import VisionPipeline
         from .worker import demo_frame
@@ -71,8 +72,21 @@ def run(output: Path):
         loop.exec()
         events = db.events(session_id)
         result["events"] = [e["kind"] for e in events]
-        assert set(result["events"]) == {"phone", "multiple", "absence", "head", "window"}, result["events"]
+        assert set(result["events"]) == {"phone", "multiple", "absence", "head", "window", "alt_tab", "copy", "paste", "screenshot"}, result["events"]
+        assert len(events) == 9, "Demo shortcuts must not duplicate on repeated samples"
         assert all(e["end"] is not None for e in events)
+        assert not window.keyboard.running, "Demo must not install a keyboard hook"
+        if os.name == "nt":
+            # Exercise real registration/cleanup without recording the user's keys.
+            monitor = KeyboardMonitor()
+            for _ in range(2):
+                try:
+                    monitor.start(record=False)
+                    assert monitor.running
+                finally:
+                    monitor.stop()
+                assert not monitor.running and monitor.drain() == []
+            result["windows_hook_lifecycle"] = True
         window.navigate(1)
         window.selected_session = session_id
         window.refresh_sessions()
@@ -110,6 +124,34 @@ def run(output: Path):
         assert {e["kind"] for e in technical_events} == {"camera", "system"}
         assert all(e["end"] is not None for e in technical_events)
         assert window.metrics[2].text() == "0 / 100"
+        # Session-only queue delivery through the real UI/SQLite controller.
+        window.connect_camera()
+        loop = QEventLoop()
+        QTimer.singleShot(1200, loop.quit)
+        loop.exec()
+        if os.name == "nt":
+            # Exercise live-session startup with the existing synthetic source;
+            # force recording off so diagnostics never capture real user keys.
+            window.mode.setCurrentIndex(0)
+            native_start = window.keyboard.start
+            window.keyboard.start = lambda: native_start(record=False)
+        window.start_session()
+        queue_session = window.session_id
+        assert queue_session is not None
+        if os.name == "nt":
+            assert window.keyboard.running
+            assert window.security.target == int(window.winId())
+        for kind, chord in (("copy", "Ctrl+C"), ("paste", "Ctrl+V"), ("screenshot", "Print Screen"), ("alt_tab", "Alt+Tab")):
+            window.keyboard._queue.put(Shortcut(kind, chord, time.monotonic()))
+        window.stop_session()  # Pending events must survive stop before next timer tick.
+        assert not window.keyboard.running
+        assert {e["kind"] for e in db.events(queue_session)} == {"copy", "paste", "screenshot", "alt_tab"}
+        window.record_shortcut("copy", "Ctrl+C", 0)
+        assert len(db.events(queue_session)) == 4, "No events after the session ends"
+        result["shortcut_queue_and_session_scope"] = True
+        loop = QEventLoop()
+        QTimer.singleShot(300, loop.quit)
+        loop.exec()
         result["failure_recovery"] = True
         window.close()
         result["ok"] = True
@@ -134,6 +176,8 @@ def run(output: Path):
         if window is not None and window.worker is not None:
             window.worker.requestInterruption()
             window.worker.wait(10000)
+        if window is not None:
+            window.keyboard.stop()
         if db is not None:
             db.close()
     (output/"result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
