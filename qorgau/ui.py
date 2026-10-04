@@ -2,8 +2,8 @@ from dataclasses import asdict
 from pathlib import Path
 import time
 import cv2
-from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QPainter, QPixmap
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox,
     QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox,
@@ -14,79 +14,9 @@ from .engine import Event, EventEngine, Observation, TITLES, risk_score
 from .reports import REVIEWS, STATUSES, clock, export_report, local_time
 from .security import KeyboardMonitor, SecurityMonitor
 from .worker import CameraWorker
-
-
-STYLE = """
-QWidget {font-family:'Segoe UI';font-size:13px;color:#243c3d;}
-QMainWindow, #content {background:#edf3f0;}
-#sidebar {background:#132c2c;} #sidebar QLabel {color:#a8c3bc;}
-#brand {color:#e8fff6;font-size:23px;font-weight:800;letter-spacing:2px;}
-#sideTag {color:#67ddb0;font-size:10px;font-weight:700;letter-spacing:3px;}
-#sidebar QPushButton {background:transparent;color:#c3d7d1;text-align:left;padding:13px 18px;border:0;border-radius:8px;}
-#sidebar QPushButton:checked {background:#2a4743;color:#9ff0cb;font-weight:700;}
-#sidebar QPushButton:hover {background:#23403c;}
-#title {font-size:28px;font-weight:700;color:#142e2b;}
-#subtitle, #muted {color:#667c75;}
-#card {background:white;border:1px solid #dae5df;border-radius:14px;}
-#cardTitle {font-size:15px;font-weight:700;}
-#metricValue {font-size:26px;font-weight:700;color:#143e32;}
-#badge {background:#dcefe4;color:#186645;border-radius:10px;padding:8px 14px;font-weight:600;}
-#status {color:#355c4c;background:#e1eee5;border:1px solid #cddfd1;border-radius:8px;padding:10px;}
-#banner {background:#fff0ce;color:#71531b;border-radius:8px;padding:9px;}
-QPushButton {background:#edf3ef;border:1px solid #d6e1db;border-radius:8px;padding:9px 13px;font-weight:600;}
-QPushButton:hover {background:#e2ece6;} QPushButton:disabled {color:#91a49a;background:#f1f4f2;}
-#primary {background:#177d5e;color:white;border:0;} #primary:hover {background:#11694e;}
-#primary:disabled {background:#dce5df;color:#879b90;}
-#danger {color:#a84738;background:#fceee9;border:1px solid #edd1c8;}
-#danger:disabled {color:#acaaa3;background:#f2f3f0;border:1px solid #e1e5df;}
-QLineEdit,QComboBox,QSpinBox,QDoubleSpinBox,QTextEdit {background:#f8faf8;border:1px solid #d6e1db;border-radius:7px;padding:8px;selection-background-color:#177d5e;}
-QLineEdit:focus,QTextEdit:focus {border:1px solid #177d5e;}
-QTableWidget {background:white;border:0;gridline-color:#edf1ee;alternate-background-color:#f8faf8;selection-background-color:#dcefe4;selection-color:#173c2c;}
-QHeaderView::section {background:#f2f6f3;color:#5a7367;border:0;border-bottom:1px solid #dce6df;padding:9px;text-align:left;font-weight:600;}
-QTableWidget::item {padding:6px;} QScrollArea {border:0;background:transparent;}
-QScrollBar:vertical {width:9px;background:#edf3f0;} QScrollBar::handle:vertical {background:#c5d6cc;border-radius:4px;min-height:25px;}
-QToolTip {background:#183d32;color:white;border:0;padding:8px;}
-"""
-
-
-def label(text, name=None):
-    widget = QLabel(text)
-    if name:
-        widget.setObjectName(name)
-    widget.setWordWrap(True)
-    return widget
-
-
-def button(text, handler, name=None):
-    widget = QPushButton(text)
-    if name:
-        widget.setObjectName(name)
-    widget.clicked.connect(handler)
-    return widget
-
-
-def card(title=None):
-    widget = QFrame()
-    widget.setObjectName("card")
-    layout = QVBoxLayout(widget)
-    layout.setContentsMargins(18, 16, 18, 16)
-    layout.setSpacing(12)
-    if title:
-        layout.addWidget(label(title, "cardTitle"))
-    return widget, layout
-
-
-def table(headers):
-    widget = QTableWidget(0, len(headers))
-    widget.setHorizontalHeaderLabels(headers)
-    widget.verticalHeader().hide()
-    widget.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-    widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-    widget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-    widget.setAlternatingRowColors(True)
-    widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-    widget.horizontalHeader().setStretchLastSection(True)
-    return widget
+from .design import STYLE, EVENT_COLORS, button, card, icon, label, table
+from .product import event_matches, overview_stats, preset_settings, review_stats
+from . import screens
 
 
 class Preview(QWidget):
@@ -94,20 +24,32 @@ class Preview(QWidget):
         super().__init__()
         self.image = None
         self.message = "Камера ещё не подключена"
-        self.setMinimumSize(320, 235)
+        self.setMinimumSize(320, 280)
         self.setAccessibleName("Видеопоток камеры")
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#1a3432"))
+        painter.fillRect(self.rect(), QColor("#101b30"))
         if self.image is not None:
             scaled = self.image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             painter.drawPixmap((self.width()-scaled.width())//2, (self.height()-scaled.height())//2, scaled)
         else:
-            painter.setPen(QColor("#adc9be"))
-            painter.setFont(QFont("Segoe UI", 12))
-            painter.drawText(self.rect().adjusted(25, 25, -25, -25), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self.message)
+            painter.setPen(QPen(QColor("#1d2c45"), 1))
+            for x in range(0, self.width(), 36):
+                painter.drawLine(x, 0, x, self.height())
+            for y in range(0, self.height(), 36):
+                painter.drawLine(0, y, self.width(), y)
+            cx, cy = self.width() / 2, self.height() / 2 - 22
+            painter.setPen(QPen(QColor("#304766"), 1))
+            painter.drawEllipse(QPointF(cx, cy), 54, 54)
+            painter.drawEllipse(QPointF(cx, cy), 74, 74)
+            painter.setPen(QPen(QColor("#83a9ee"), 2))
+            painter.drawRoundedRect(QRectF(cx - 24, cy - 17, 42, 34), 7, 7)
+            painter.drawPolyline([QPointF(cx + 18, cy - 10), QPointF(cx + 30, cy - 17), QPointF(cx + 30, cy + 17), QPointF(cx + 18, cy + 10)])
+            painter.setPen(QColor("#99adcb"))
+            painter.setFont(QFont("Segoe UI", 11))
+            painter.drawText(QRectF(22, cy + 85, self.width() - 44, 75), Qt.AlignmentFlag.AlignHCenter | Qt.TextFlag.TextWordWrap, self.message)
 
 
 class MainWindow(QMainWindow):
@@ -130,16 +72,27 @@ class MainWindow(QMainWindow):
         self.displayed_sessions = []
         self.bind_countdown = 0
         self.stopping = False
+        self.auto_demo = False
+        self.displayed_events = []
+        self.note_dirty = False
+        self.note_session = None
+        self.note_draft = ""
         self.setWindowTitle("QORGAU AI · Мониторинг экзамена")
         self.resize(1280, 860)
         self.setMinimumSize(1000, 740)
         self.setStyleSheet(STYLE)
         self.build_ui()
+        self.note_timer = QTimer(self)
+        self.note_timer.setSingleShot(True)
+        self.note_timer.timeout.connect(self.flush_note)
+        self.note.textChanged.connect(self.queue_note_save)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(250)
         self.last_heartbeat = 0
         self.refresh_sessions()
+        self.navigate(4)
+        self.update_readiness()
 
     def build_ui(self):
         root = QWidget()
@@ -150,29 +103,40 @@ class MainWindow(QMainWindow):
         sidebar.setObjectName("sidebar")
         sidebar.setFixedWidth(208)
         side = QVBoxLayout(sidebar)
-        side.setContentsMargins(20, 30, 20, 22)
+        side.setContentsMargins(16, 28, 16, 22)
         side.setSpacing(10)
         side.addWidget(label("QORGAU AI", "brand"))
-        side.addWidget(label("EXAM INTEGRITY", "sideTag"))
-        side.addSpacing(34)
-        self.nav = []
+        side.addWidget(label("EXAM INTELLIGENCE", "sideTag"))
+        side.addSpacing(24)
+        side.addWidget(label("РАБОЧЕЕ ПРОСТРАНСТВО", "sideTag"))
+        self.nav = [None] * 5
         self.pages = QStackedWidget()
-        for index, title in enumerate(("01   Мониторинг", "02   Сессии и отчёты", "03   Настройки", "04   Как это работает")):
+        for index, title, symbol in ((4, "Обзор", "home"), (0, "Мониторинг", "monitor"), (1, "Сессии и отчёты", "archive"), (2, "Настройки", "settings"), (3, "О продукте", "info")):
             nav = button(title, lambda checked=False, i=index: self.navigate(i))
+            nav.setIcon(icon(symbol))
             nav.setCheckable(True)
-            self.nav.append(nav)
+            self.nav[index] = nav
             side.addWidget(nav)
         self.nav[0].setChecked(True)
         side.addStretch()
-        side.addWidget(label("Локальная обработка\nYOLO11n + MediaPipe"))
+        side_panel = QFrame()
+        side_panel.setObjectName("sidePanel")
+        panel_box = QVBoxLayout(side_panel)
+        panel_box.setSpacing(7)
+        panel_box.addWidget(label("ГОТОВО К ДЕМОНСТРАЦИИ", "sideTag"))
+        panel_box.addWidget(label("Посмотрите все 9 сигналов\nна синтетическом сценарии."))
+        self.side_demo = button("Запустить демо   →", self.launch_demo, "sideDemo")
+        panel_box.addWidget(self.side_demo)
+        side.addWidget(side_panel)
         side.addSpacing(10)
+        side.addWidget(label("●  Обработка на устройстве\nДанные остаются у вас"))
         side.addWidget(label(f"v{__version__}  /  Windows", "sideTag"))
         layout.addWidget(sidebar)
         content = QWidget()
         content.setObjectName("content")
         body = QVBoxLayout(content)
-        body.setContentsMargins(26, 24, 26, 20)
-        body.setSpacing(18)
+        body.setContentsMargins(28, 24, 28, 20)
+        body.setSpacing(20)
         heading = QHBoxLayout()
         texts = QVBoxLayout()
         self.title = label("Мониторинг экзамена", "title")
@@ -189,6 +153,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self.archive_page())
         self.pages.addWidget(self.settings_page())
         self.pages.addWidget(self.help_page())
+        self.pages.addWidget(screens.overview_page(self))
         layout.addWidget(content, 1)
         self.setCentralWidget(root)
 
@@ -196,187 +161,161 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentIndex(index)
         for i, nav in enumerate(self.nav):
             nav.setChecked(i == index)
-        self.title.setText(("Мониторинг экзамена", "Сессии и отчёты", "Настройки наблюдения", "Как это работает")[index])
+        self.title.setText(("Центр наблюдения", "Сессии и отчёты", "Настройки наблюдения", "О продукте", "Обзор рабочего пространства")[index])
         self.subtitle.setText(("Наблюдайте за сессией. Проверяйте события в контексте.",
             "История экзаменов, проверка эпизодов и экспорт отчётов.",
             "Настройки применяются к следующему подключению камеры.",
-            "Пять наблюдаемых сигналов. Окончательное решение — за человеком.")[index])
+            "Девять сигналов. Окончательное решение — за человеком.", "От подготовки экзамена до прозрачного отчёта.")[index])
         if index == 1:
             self.refresh_sessions()
+        elif index == 4:
+            self.refresh_overview()
 
     def monitor_page(self):
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(14)
-        metrics = QHBoxLayout()
-        self.metrics = []
-        self.metric_captions = []
-        for heading, value, caption in (("ДЛИТЕЛЬНОСТЬ", "00:00:00", "Сессия ещё не началась"),
-            ("СОБЫТИЯ", "0", "Эпизоды для проверки"), ("ПРИОРИТЕТ ПРОВЕРКИ", "0 / 100", "Индекс, не вердикт"),
-            ("ЛЮДИ В КАДРЕ", "—", "Данные YOLO11n")):
-            widget, box = card()
-            box.setSpacing(4)
-            box.addWidget(label(heading, "muted"))
-            metric = label(value, "metricValue")
-            box.addWidget(metric)
-            caption_label = label(caption, "muted")
-            box.addWidget(caption_label)
-            self.metric_captions.append(caption_label)
-            self.metrics.append(metric)
-            metrics.addWidget(widget)
-        layout.addLayout(metrics)
-        middle = QHBoxLayout()
-        camera, camera_layout = card()
-        camera_top = QHBoxLayout()
-        camera_top.addWidget(label("Видеопоток", "cardTitle"))
-        camera_top.addStretch()
-        self.camera_info = label("Отключено", "muted")
-        camera_top.addWidget(self.camera_info)
-        camera_layout.addLayout(camera_top)
-        self.preview = Preview()
-        camera_layout.addWidget(self.preview, 1)
-        self.demo_banner = label("ДЕМО · Синтетические кадры и события. Цикл 48 секунд.", "banner")
-        self.demo_banner.hide()
-        camera_layout.addWidget(self.demo_banner)
-        self.pipeline_info = label("Модели загружаются при подключении реальной камеры.", "muted")
-        camera_layout.addWidget(self.pipeline_info)
-        middle.addWidget(camera, 3)
-        controls, controls_layout = card("Параметры сессии")
-        controls_layout.setSpacing(6)
-        controls.setMinimumWidth(276)
-        controls.setMaximumWidth(345)
-        self.candidate = QLineEdit()
-        self.candidate.setMaxLength(120)
-        self.candidate.setPlaceholderText("ФИО или ID участника")
-        self.candidate.setAccessibleName("Участник экзамена")
-        self.exam = QLineEdit()
-        self.exam.setMaxLength(160)
-        self.exam.setPlaceholderText("Например, Математика / 01")
-        self.exam.setAccessibleName("Название экзамена")
-        self.mode = QComboBox()
-        self.mode.addItems(["Реальная камера", "Демонстрация"])
-        self.mode.currentIndexChanged.connect(self.mode_changed)
-        self.mode.setAccessibleName("Режим наблюдения")
-        session_form = QFormLayout()
-        session_form.setSpacing(8)
-        for title, widget in (("Участник", self.candidate), ("Экзамен", self.exam), ("Источник", self.mode)):
-            session_form.addRow(label(title, "muted"), widget)
-        controls_layout.addLayout(session_form)
-        self.connect_button = button("Подключить камеру", self.connect_camera)
-        controls_layout.addWidget(self.connect_button)
-        self.bind_button = button("Закрепить окно экзамена", self.bind_window)
-        self.bind_button.setToolTip("После нажатия переключитесь в окно экзамена за 5 секунд")
-        controls_layout.addWidget(self.bind_button)
-        self.window_info = label("Контроль выхода из QORGAU AI · можно закрепить окно экзамена", "muted")
-        controls_layout.addWidget(self.window_info)
-        self.keyboard_info = label("Alt+Tab · Ctrl+C/V · Print Screen — только во время экзамена", "muted")
-        controls_layout.addWidget(self.keyboard_info)
-        self.start_button = button("Начать экзамен  →", self.start_session, "primary")
-        self.start_button.setEnabled(False)
-        controls_layout.addWidget(self.start_button)
-        self.stop_button = button("Завершить экзамен", self.stop_session, "danger")
-        self.stop_button.setEnabled(False)
-        controls_layout.addWidget(self.stop_button)
-        controls_layout.addStretch()
-        middle.addWidget(controls, 2)
-        layout.addLayout(middle, 3)
-        self.status = label("Введите участника и экзамен, подключите камеру и начните сессию.", "status")
-        layout.addWidget(self.status)
-        journal, journal_layout = card("Журнал событий")
-        self.event_table = table(["Время", "Наблюдение", "Длительность", "Состояние"])
-        self.event_table.setMinimumHeight(130)
-        self.event_table.setMaximumHeight(200)
-        journal_layout.addWidget(self.event_table)
-        layout.addWidget(journal, 1)
-        scroll.setWidget(page)
-        return scroll
+        return screens.monitor_page(self, Preview)
 
     def archive_page(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        top = QHBoxLayout()
-        self.search = QLineEdit()
-        self.search.setPlaceholderText("Поиск по участнику или экзамену…")
-        self.search.textChanged.connect(self.refresh_sessions)
-        top.addWidget(self.search)
-        top.addWidget(button("Обновить", self.refresh_sessions))
-        top.addWidget(button("Папка данных", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(data_root())))))
-        layout.addLayout(top)
-        sessions, box = card()
-        self.sessions_table = table(["№", "Участник / экзамен", "Начало", "Режим", "События", "Статус"])
-        self.sessions_table.setMinimumHeight(120)
-        self.sessions_table.setMaximumHeight(220)
-        self.sessions_table.itemSelectionChanged.connect(self.select_session)
-        box.addWidget(self.sessions_table)
-        layout.addWidget(sessions)
-        events, box = card("Проверка событий")
-        self.review_summary = label("Выберите сессию в списке", "muted")
-        box.addWidget(self.review_summary)
-        self.review_table = table(["Время", "Наблюдение", "Длительность", "Проверка", "Детали"])
-        box.addWidget(self.review_table, 1)
-        actions = QHBoxLayout()
-        for caption, verdict in (("Подтвердить", "confirmed"), ("Отклонить", "dismissed"), ("Сбросить", "pending")):
-            actions.addWidget(button(caption, lambda checked=False, v=verdict: self.review_event(v)))
-        actions.addWidget(button("Открыть кадр", self.open_evidence))
-        actions.addStretch()
-        box.addLayout(actions)
-        self.note = QTextEdit()
-        self.note.setPlaceholderText("Комментарий проверяющего…")
-        self.note.setMaximumHeight(76)
-        box.addWidget(self.note)
-        footer = QHBoxLayout()
-        footer.addWidget(button("Сохранить комментарий", self.save_note))
-        footer.addStretch()
-        self.export_button = button("Экспорт отчёта  ↓", self.export_selected, "primary")
-        footer.addWidget(self.export_button)
-        box.addLayout(footer)
-        layout.addWidget(events, 1)
-        return page
+        return screens.archive_page(self)
 
     def settings_page(self):
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 8, 0)
-        widget, box = card("Камера и детекция")
-        form = QFormLayout()
-        form.setSpacing(18)
-        self.setting_fields = {}
-        options = [("camera_index", "Номер камеры", 0, 9, 1),
-            ("confidence", "YOLO — уверенность: человек", 0.1, 0.95, 0.05),
-            ("phone_confidence", "YOLO — уверенность: телефон", 0.1, 0.95, 0.05),
-            ("head_angle", "Порог поворота головы, °", 10, 80, 5),
-            ("phone_seconds", "Телефон — задержка, с", 0.5, 60, 0.5),
-            ("multiple_seconds", "Несколько людей — задержка, с", 0.5, 60, 0.5),
-            ("absence_seconds", "Отсутствие — задержка, с", 0.5, 60, 0.5),
-            ("head_seconds", "Поворот головы — задержка, с", 0.5, 60, 0.5),
-            ("window_seconds", "Переключение окна — задержка, с", 0, 60, 0.5)]
-        for key, caption, minimum, maximum, step in options:
-            field = QSpinBox() if key == "camera_index" else QDoubleSpinBox()
-            field.setRange(minimum, maximum)
-            field.setSingleStep(step)
-            field.setValue(getattr(self.settings, key))
-            field.setAccessibleName(caption)
-            field.setMaximumWidth(160)
-            self.setting_fields[key] = field
-            form.addRow(caption, field)
-        box.addLayout(form)
-        self.evidence_check = QCheckBox("Сохранять один кадр при открытии визуального события")
-        self.evidence_check.setChecked(self.settings.save_evidence)
-        box.addWidget(self.evidence_check)
-        box.addWidget(label("По умолчанию кадры не сохраняются. Данные и выбранные кадры остаются на этом компьютере; полная видеозапись не ведётся.", "muted"))
-        self.save_settings_button = button("Сохранить настройки", self.save_settings, "primary")
-        box.addWidget(self.save_settings_button)
-        layout.addWidget(widget)
-        layout.addWidget(label("Для нового угла камеры сначала завершите текущую сессию. Поворот головы — оценка ориентации лица, а не направления взгляда. Слабое освещение и закрытое лицо могут ухудшать детекцию.", "muted"))
-        layout.addStretch()
-        scroll.setWidget(page)
-        return scroll
+        return screens.settings_page(self)
+
+    def set_badge(self, text, state="idle"):
+        self.badge.setText(text)
+        self.badge.setProperty("state", state)
+        self.badge.style().unpolish(self.badge)
+        self.badge.style().polish(self.badge)
+
+    def update_readiness(self):
+        if not hasattr(self, "start_button"):
+            return
+        details = bool(self.candidate.text().strip() and self.exam.text().strip())
+        source = self.worker_ready and time.monotonic() - self.last_frame <= 2 and self.last_observation.camera_ok
+        ready = details and source and not self.bind_countdown and not self.stopping
+        active = self.session_id is not None
+        self.start_button.setEnabled(ready and not active)
+        if active:
+            text = "● Сессия идёт · события сохраняются"
+        elif self.bind_countdown:
+            text = "Выберите окно за время отсчёта"
+        elif not details:
+            text = "01  Укажите участника и экзамен"
+        elif not source:
+            text = "02  Подключите источник и дождитесь кадра"
+        else:
+            text = "● Данные и источник готовы к старту"
+        self.readiness.setText(text)
+        if self.readiness.property("ready") != ready:
+            self.readiness.setProperty("ready", ready)
+            self.readiness.style().unpolish(self.readiness)
+            self.readiness.style().polish(self.readiness)
+        if hasattr(self, "side_demo"):
+            self.side_demo.setEnabled(self.worker is None and not active and not self.stopping)
+        if hasattr(self, "preset_buttons"):
+            editable = self.worker is None and not active
+            for field in list(self.setting_fields.values()) + self.preset_buttons + [self.evidence_check]:
+                field.setEnabled(editable)
+
+    def launch_demo(self):
+        if self.worker is not None or self.session_id is not None or self.stopping:
+            self.navigate(0)
+            self.status.setText("Завершите текущую сессию и отключите источник перед запуском демонстрации.")
+            return
+        self.navigate(0)
+        if not self.candidate.text().strip():
+            self.candidate.setText("Демонстрационный участник")
+        if not self.exam.text().strip():
+            self.exam.setText("Презентация QORGAU AI")
+        self.mode.setCurrentIndex(1)
+        self.auto_demo = True
+        self.connect_camera()
+
+    def apply_preset(self, preset):
+        if self.worker is not None or self.session_id is not None:
+            return
+        current = Settings(**{key: field.value() for key, field in self.setting_fields.items()}, save_evidence=self.evidence_check.isChecked())
+        values = asdict(preset_settings(current, preset))
+        for key, field in self.setting_fields.items():
+            field.setValue(values[key])
+        from .product import PRESETS
+        self.preset_hint.setText(f"Выбран профиль «{PRESETS[preset][0]}». Нажмите «Сохранить настройки».")
+
+    def open_data_folder(self):
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(data_root())))
+
+    def refresh_overview(self):
+        if not hasattr(self, "overview_values"):
+            return
+        sessions = self.db.sessions()
+        stats = overview_stats(sessions)
+        values = [str(stats["live"]), str(stats["completed"]), f"{int(stats['duration'] // 60)} мин", str(stats["events"])]
+        for label_widget, value in zip(self.overview_values, values):
+            label_widget.setText(value)
+        self.recent_sessions = sessions[:4]
+        self.recent_table.setRowCount(len(self.recent_sessions))
+        for row, session in enumerate(self.recent_sessions):
+            for col, text in enumerate((f"{session['candidate']} / {session['exam']}", "ДЕМО" if session["mode"] == "demo" else "Камера", str(session["event_count"]), STATUSES[session["status"]])):
+                self.recent_table.setItem(row, col, QTableWidgetItem(text))
+        self.recent_empty.setVisible(not sessions)
+        self.recent_table.setVisible(bool(sessions))
+        self.overview_note.setText(f"Демо-сессий: {stats['demo']}. Они не входят в статистику реальных экзаменов. Двойной щелчок по сессии открывает её отчёт.")
+
+    def open_recent(self, row, column=0):
+        if not 0 <= row < len(self.recent_sessions):
+            return
+        self.search.clear()
+        self.archive_filter.setCurrentIndex(0)
+        self.selected_session = self.recent_sessions[row]["id"]
+        self.navigate(1)
+
+    def filter_journal(self):
+        elapsed = time.monotonic() - self.session_start if self.session_id is not None else getattr(self, "journal_elapsed", 0)
+        self.refresh_journal(elapsed)
+
+    def select_timeline_event(self, index):
+        if not 0 <= index < len(self.session_events):
+            return
+        event = self.session_events[index]
+        self.journal_search.clear()
+        self.journal_filter.setCurrentIndex(0)
+        self.filter_journal()
+        row = next((i for i, candidate in enumerate(self.displayed_events) if candidate is event), None)
+        if row is not None:
+            self.event_table.selectRow(row)
+            self.event_table.scrollToItem(self.event_table.item(row, 0))
+            self.pages.widget(0).ensureWidgetVisible(self.event_table)
+
+    def review_table_select(self, index):
+        if 0 <= index < self.review_table.rowCount():
+            self.review_table.selectRow(index)
+            self.review_table.scrollToItem(self.review_table.item(index, 0))
+            self.pages.widget(1).ensureWidgetVisible(self.review_table)
+
+    def update_review_actions(self):
+        selected = self.selected_session is not None and 0 <= self.review_table.currentRow() < len(getattr(self, "review_events", []))
+        for action in self.review_actions:
+            action.setEnabled(selected)
+        if selected:
+            event = self.review_events[self.review_table.currentRow()]
+            self.evidence_button.setEnabled(bool(event["evidence"] and Path(event["evidence"]).is_file()))
+        available = self.selected_session is not None
+        self.export_button.setEnabled(available)
+        self.save_note_button.setEnabled(available)
+        self.note.setEnabled(available)
+
+    def queue_note_save(self):
+        if self.selected_session is not None:
+            self.note_session = self.selected_session
+            self.note_draft = self.note.toPlainText()
+            self.note_dirty = True
+            self.note_timer.start(700)
+
+    def flush_note(self):
+        self.note_timer.stop()
+        if self.note_dirty and self.note_session is not None:
+            self.db.note(self.note_session, self.note_draft)
+            self.note_dirty = False
+            self.archive_status.setText("Вывод сохранён автоматически на этом компьютере.")
 
     def help_page(self):
         scroll = QScrollArea()
@@ -404,8 +343,9 @@ class MainWindow(QMainWindow):
         demo = self.mode.currentIndex() == 1
         self.connect_button.setText("Запустить демонстрацию" if demo else "Подключить камеру")
         self.bind_button.setEnabled(not demo)
-        self.window_info.setText("ДЕМО · переключение окна синтетическое" if demo else (f"Контроль окна: {self.security.title}" if self.security.external else "Контроль выхода из QORGAU AI · можно закрепить окно экзамена"))
-        self.keyboard_info.setText("ДЕМО · сочетания клавиш синтетические" if demo else "Alt+Tab · Ctrl+C/V · Print Screen — только во время экзамена")
+        self.window_info.setText("ОКНА · синтетические события" if demo else (f"ОКНА · {self.security.title}" if self.security.external else "ОКНА · выход из QORGAU AI"))
+        self.keyboard_info.setText("КЛАВИШИ · синтетические события" if demo else "КЛАВИШИ · включатся с началом экзамена")
+        self.update_readiness()
 
     def connect_camera(self):
         if self.worker is not None:
@@ -427,12 +367,14 @@ class MainWindow(QMainWindow):
         self.worker.ready.connect(self.on_ready)
         self.worker.finished.connect(self.worker_finished)
         self.worker.start()
+        self.update_readiness()
 
     def on_ready(self):
         self.worker_ready = True
         self.connect_button.setEnabled(True)
         self.connect_button.setText("Отключить источник")
         self.status.setText("Источник готов. Введите данные участника и начните экзамен.")
+        self.update_readiness()
 
     def on_frame(self, image, observation, raw):
         if self.stopping or self.worker is None:
@@ -453,6 +395,11 @@ class MainWindow(QMainWindow):
             f"YOLO11n + MediaPipe · CPU · {observation.inference_ms:.0f} мс / кадр · лица: {observation.faces}" + (f" · угол: {observation.yaw:.0f}°" if observation.yaw is not None else ""))
         if self.session_id is not None:
             self.consume_observation(observation)
+        self.update_readiness()
+        self.metric_captions[3].setText("Синтетическое наблюдение" if self.mode.currentIndex() == 1 else "На доступном кадре")
+        if self.auto_demo and self.start_button.isEnabled():
+            self.auto_demo = False
+            self.start_session()
 
     def consume_observation(self, observation):
         if self.mode.currentIndex() == 0:
@@ -524,21 +471,26 @@ class MainWindow(QMainWindow):
         self.bind_button.setEnabled(False)
         self.candidate.setEnabled(False)
         self.exam.setEnabled(False)
-        self.badge.setText("●  ДЕМО СЕССИЯ" if mode == "demo" else "●  ЭКЗАМЕН ИДЁТ")
+        self.set_badge("●  ДЕМО СЕССИЯ" if mode == "demo" else "●  ЭКЗАМЕН ИДЁТ", mode)
         self.status.setText(f"Сессия #{self.session_id} записывается локально. " + ("Записываются только указанные сочетания клавиш; текст и буфер обмена не читаются." if mode == "live" else "Демонстрационные события синтетические."))
+        self.update_readiness()
 
-    def record_shortcut(self, kind, chord, elapsed, demo=False):
+    def record_shortcut(self, kind, chord, elapsed, demo=False, refresh=True):
         if self.session_id is None:
             return
         detail = f"{'ДЕМО · ' if demo else ''}Нажато {chord}; содержимое буфера и экрана не фиксируется"
         event = Event(kind, max(0.0, elapsed), max(0.0, elapsed), detail)
         self.db.add_event(self.session_id, event)
         self.session_events.append(event)
-        self.refresh_journal(max(0.0, elapsed))
+        if refresh:
+            self.refresh_journal(max(0.0, elapsed))
 
     def drain_shortcuts(self):
-        for shortcut in self.keyboard.drain():
-            self.record_shortcut(shortcut.kind, shortcut.chord, shortcut.at - self.session_start)
+        shortcuts = self.keyboard.drain()
+        for shortcut in shortcuts:
+            self.record_shortcut(shortcut.kind, shortcut.chord, shortcut.at - self.session_start, refresh=False)
+        if shortcuts and self.session_id is not None:
+            self.refresh_journal(time.monotonic() - self.session_start)
 
     def stop_session(self, checked=False, interrupted=False):
         self.keyboard.stop()
@@ -556,12 +508,15 @@ class MainWindow(QMainWindow):
             self.selected_session = ended_id
             self.status.setText(f"Сессия #{ended_id} {'прервана' if interrupted else 'завершена'}. Откройте «Сессии и отчёты» для проверки и экспорта.")
         self.keyboard_info.setText("Контроль клавиш остановлен")
+        self.auto_demo = False
         self.stop_preview()
         self.stop_button.setEnabled(False)
         self.candidate.setEnabled(True)
         self.exam.setEnabled(True)
-        self.badge.setText("●  СЕССИЯ СОХРАНЕНА")
+        self.set_badge("●  СЕССИЯ СОХРАНЕНА")
         self.refresh_sessions()
+        self.refresh_overview()
+        self.update_readiness()
 
     def stop_preview(self):
         if self.worker is not None:
@@ -591,8 +546,10 @@ class MainWindow(QMainWindow):
         self.camera_info.setText("Отключено")
         self.pipeline_info.setText("Подключите источник для наблюдения.")
         self.mode_changed()
+        self.update_readiness()
 
     def on_failure(self, message):
+        self.auto_demo = False
         if self.session_id is not None:
             elapsed = time.monotonic()-self.session_start
             self.consume_observation(Observation(camera_ok=False))
@@ -606,6 +563,7 @@ class MainWindow(QMainWindow):
         self.preview.update()
 
     def tick(self):
+        self.update_readiness()
         if self.bind_countdown:
             if time.monotonic() >= self.bind_deadline:
                 self.bind_countdown = 0
@@ -616,7 +574,7 @@ class MainWindow(QMainWindow):
                 except RuntimeError as error:
                     self.status.setText(str(error))
                 self.bind_button.setEnabled(True)
-                self.bind_button.setText("Закрепить окно экзамена")
+                self.bind_button.setText("Выбрать окно экзамена")
             else:
                 self.bind_button.setText(f"Переключитесь в окно: {int(self.bind_deadline-time.monotonic())+1} с")
         if self.session_id is None:
@@ -644,6 +602,8 @@ class MainWindow(QMainWindow):
             self.db.heartbeat(self.session_id, elapsed)
             self.refresh_journal(elapsed)
             self.last_heartbeat = elapsed
+            if self.pages.currentIndex() == 4:
+                self.refresh_overview()
 
     def bind_window(self):
         if self.session_id is not None or self.bind_countdown:
@@ -655,20 +615,40 @@ class MainWindow(QMainWindow):
         self.status.setText("За 5 секунд переключитесь в окно, в котором участник будет сдавать экзамен.")
 
     def refresh_journal(self, elapsed):
+        self.journal_elapsed = elapsed
         self.metrics[1].setText(str(len(self.session_events)))
         self.metrics[2].setText(f"{risk_score(self.session_events)} / 100")
-        self.event_table.setRowCount(len(self.session_events))
-        for row, event in enumerate(reversed(self.session_events)):
+        self.metrics[2].setStyleSheet("color:#ba7850;" if risk_score(self.session_events) >= 50 else "color:#17253d;")
+        self.timeline.set_events(self.session_events, elapsed)
+        self.displayed_events = [e for e in reversed(self.session_events) if event_matches(e, self.journal_filter.currentData(), self.journal_search.text())]
+        signature = tuple((e.id, e.end) for e in self.displayed_events)
+        rebuild = signature != getattr(self, "journal_signature", None)
+        if rebuild:
+            self.event_table.setRowCount(len(self.displayed_events))
+            self.journal_signature = signature
+        self.journal_empty.setVisible(not self.displayed_events)
+        self.journal_empty.setText("По этому фильтру событий нет. Измените категорию или поисковый запрос." if self.session_events else "Пока всё спокойно. Зарегистрированные события появятся здесь.")
+        for row, event in enumerate(self.displayed_events):
             duration = max(0, (event.end if event.end is not None else elapsed)-event.start)
-            cells = [clock(event.start), TITLES.get(event.kind, event.kind), f"{duration:.1f} с", "Идёт" if event.end is None else "Для проверки"]
+            length = "Нажатие" if event.kind in {"copy", "paste", "alt_tab", "screenshot"} else f"{duration:.1f} с"
+            if not rebuild:
+                if event.end is None:
+                    self.event_table.item(row, 2).setText(length)
+                continue
+            cells = [clock(event.start), TITLES.get(event.kind, event.kind), length, "Идёт" if event.end is None else "Для проверки"]
             for col, value in enumerate(cells):
-                self.event_table.setItem(row, col, QTableWidgetItem(value))
+                item = QTableWidgetItem(value)
+                if col == 1:
+                    item.setForeground(QColor(EVENT_COLORS.get(event.kind, "#526482")))
+                    item.setToolTip(event.detail)
+                self.event_table.setItem(row, col, item)
 
     def refresh_sessions(self):
         if not hasattr(self, "sessions_table"):
             return
         query = self.search.text().strip().casefold()
-        self.displayed_sessions = [s for s in self.db.sessions() if query in f"{s['candidate']} {s['exam']}".casefold()]
+        category = self.archive_filter.currentData()
+        self.displayed_sessions = [s for s in self.db.sessions() if query in f"{s['candidate']} {s['exam']}".casefold() and (category == "all" or s["mode"] == category or s["status"] == category)]
         self.sessions_table.blockSignals(True)
         self.sessions_table.setRowCount(len(self.displayed_sessions))
         selected_row = None
@@ -680,22 +660,38 @@ class MainWindow(QMainWindow):
             if session["id"] == self.selected_session:
                 selected_row = row
         self.sessions_table.blockSignals(False)
+        self.archive_empty.setVisible(not self.displayed_sessions)
+        self.archive_empty.setText("Ничего не найдено. Измените запрос или фильтр." if query or category != "all" else "Нет сохранённых сессий. Начните экзамен или запустите демонстрацию.")
         if selected_row is not None:
             self.sessions_table.selectRow(selected_row)
             self.select_session()
-        elif not self.displayed_sessions:
+        else:
+            self.flush_note()
             self.selected_session = None
             self.review_table.setRowCount(0)
-            self.review_summary.setText("Сессии не найдены")
+            self.review_summary.setText("Выберите сессию в списке" if self.displayed_sessions else "Нет сессий по выбранному запросу")
+            self.note.blockSignals(True)
             self.note.clear()
+            self.note.blockSignals(False)
+            self.note_session = None
+            self.review_events = []
+            self.review_timeline.set_events([], 0)
+            self.review_counts.setText("Проверено 0 из 0")
+            self.review_progress.setValue(0)
+        self.update_review_actions()
+        self.refresh_overview()
 
     def select_session(self):
         row = self.sessions_table.currentRow()
         if row < 0 or row >= len(self.displayed_sessions):
             return
+        self.flush_note()
         self.selected_session = self.displayed_sessions[row]["id"]
         session = self.db.session(self.selected_session)
+        self.note.blockSignals(True)
         self.note.setPlainText(session["note"])
+        self.note.blockSignals(False)
+        self.note_session = self.selected_session
         self.refresh_review()
 
     def refresh_review(self):
@@ -703,13 +699,21 @@ class MainWindow(QMainWindow):
             return
         session = self.db.session(self.selected_session)
         self.review_events = self.db.events(self.selected_session)
+        summary = review_stats(self.review_events)
+        done = summary["confirmed"] + summary["dismissed"]
+        total = len(self.review_events)
+        self.review_progress.setValue(round(100 * done / total) if total else 0)
+        self.review_counts.setText(f"Проверено {done} из {total} · подтверждено {summary['confirmed']} · отклонено {summary['dismissed']} · ожидает {summary['pending']}")
+        self.review_timeline.set_events(self.review_events, session["duration"])
         self.review_summary.setText(f"Сессия #{session['id']} · {'ДЕМО · ' if session['mode']=='demo' else ''}{clock(session['duration'])} · {len(self.review_events)} событий · индекс {risk_score(self.review_events)}/100")
         self.review_table.setRowCount(len(self.review_events))
         for row, event in enumerate(self.review_events):
             duration = max(0, (event["end"] if event["end"] is not None else session["duration"])-event["start"])
-            cells = [clock(event["start"]), TITLES.get(event["kind"], event["kind"]), f"{duration:.1f} с", REVIEWS[event["review"]], event["detail"]]
+            length = "Нажатие" if event["kind"] in {"copy", "paste", "alt_tab", "screenshot"} else f"{duration:.1f} с"
+            cells = [clock(event["start"]), TITLES.get(event["kind"], event["kind"]), length, REVIEWS[event["review"]], event["detail"]]
             for col, value in enumerate(cells):
                 self.review_table.setItem(row, col, QTableWidgetItem(value))
+        self.update_review_actions()
 
     def review_event(self, verdict):
         row = self.review_table.currentRow()
@@ -730,9 +734,10 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Кадр события", "Кадр для этого события не сохранялся.")
 
     def save_note(self):
+        self.flush_note()
         if self.selected_session is not None:
             self.db.note(self.selected_session, self.note.toPlainText())
-            self.status.setText("Комментарий сохранён.")
+            self.archive_status.setText("Вывод проверяющего сохранён и будет включён в отчёт.")
 
     def export_selected(self):
         if self.selected_session is None:
@@ -751,7 +756,7 @@ class MainWindow(QMainWindow):
         except (OSError, ValueError) as error:
             QMessageBox.warning(self, "Не удалось сохранить", str(error))
             return
-        QMessageBox.information(self, "Отчёт сохранён", str(path))
+        self.archive_status.setText(f"Отчёт сохранён: {path}")
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def save_settings(self):
@@ -763,7 +768,7 @@ class MainWindow(QMainWindow):
         settings.save(data_root()/"settings.json")
         self.settings = settings
         self.status.setText("Настройки сохранены и будут применены при следующем подключении.")
-        QMessageBox.information(self, "Настройки", "Настройки сохранены.")
+        self.preset_hint.setText("Настройки сохранены. Будут применены при следующем подключении источника.")
 
     def closeEvent(self, event):
         if self.session_id is not None:
@@ -780,4 +785,5 @@ class MainWindow(QMainWindow):
             self.status.setText("Отключение камеры…")
             return
         self.timer.stop()
+        self.flush_note()
         event.accept()

@@ -137,6 +137,7 @@ class PersistenceTests(unittest.TestCase):
         self.assertIn("&lt;img", html)
         payload = json.loads((self.root/"report.json").read_text(encoding="utf-8"))
         self.assertEqual(payload["review_priority"], 5)
+        self.assertEqual(payload["review_summary"], {"pending": 1, "confirmed": 0, "dismissed": 0})
         self.assertEqual(payload["session"]["settings"]["confidence"], 0.45)
         self.assertEqual(payload["session"]["settings"]["phone_confidence"], 0.25)
         self.assertTrue((self.root/"report.csv").read_bytes().startswith(b"\xef\xbb\xbf"))

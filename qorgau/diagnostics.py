@@ -18,7 +18,8 @@ def run(output: Path):
         prepare_runtime(output/"data")
         import cv2
         import numpy as np
-        from PySide6.QtCore import QEventLoop, QTimer
+        from PySide6.QtCore import QEvent, QEventLoop, Qt, QTimer
+        from PySide6.QtGui import QKeyEvent
         from PySide6.QtWidgets import QApplication
         from .config import Settings, resource_root
         from .engine import Event, EventEngine, Observation
@@ -41,6 +42,14 @@ def run(output: Path):
         settings = Settings()
         window = MainWindow(db, settings)
         window.show()
+        app.processEvents()
+        window.grab().save(str(output/"overview-empty.png"))
+        window.navigate(0)
+        assert not window.start_button.isEnabled()
+        window.apply_preset("responsive")
+        assert window.setting_fields["phone_seconds"].value() == .5
+        assert settings.phone_seconds == 1.5, "Preset should only edit the pending form"
+        window.apply_preset("balanced")
         window.candidate.setText("Демо участник / QA")
         window.exam.setText("Проверка приложения")
         window.mode.setCurrentIndex(1)
@@ -75,6 +84,21 @@ def run(output: Path):
         assert set(result["events"]) == {"phone", "multiple", "absence", "head", "window", "alt_tab", "copy", "paste", "screenshot"}, result["events"]
         assert len(events) == 9, "Demo shortcuts must not duplicate on repeated samples"
         assert all(e["end"] is not None for e in events)
+        window.journal_filter.setCurrentIndex(2)
+        assert window.event_table.rowCount() == 4
+        window.journal_search.setText("ctrl+c")
+        assert window.event_table.rowCount() == 1
+        window.journal_search.setText("missing event")
+        assert window.event_table.rowCount() == 0
+        window.select_timeline_event(0)
+        assert window.event_table.rowCount() == 9
+        assert window.event_table.currentRow() == 8
+        window.timeline.selected = -1
+        app.sendEvent(window.timeline, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Left, Qt.KeyboardModifier.NoModifier))
+        assert window.event_table.currentRow() == 0
+        app.sendEvent(window.timeline, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Right, Qt.KeyboardModifier.NoModifier))
+        assert window.event_table.currentRow() == 8
+        assert window.overview_values[0].text() == "0", "Demo should not inflate real exam totals"
         assert not window.keyboard.running, "Demo must not install a keyboard hook"
         if os.name == "nt":
             # Exercise real registration/cleanup without recording the user's keys.
@@ -93,6 +117,7 @@ def run(output: Path):
         window.review_table.selectRow(0)
         window.review_event("dismissed")
         assert db.events(session_id)[0]["review"] == "dismissed"
+        assert window.review_progress.value() == 11
         window.note.setPlainText("Демонстрационная проверка. Не реальный экзамен.")
         window.save_note()
         for suffix in ("html", "csv", "json"):
@@ -100,13 +125,32 @@ def run(output: Path):
         window.grab().save(str(output/"sessions.png"))
         window.navigate(2)
         window.grab().save(str(output/"settings.png"))
+        window.navigate(4)
+        app.processEvents()
+        window.grab().save(str(output/"overview.png"))
         window.navigate(0)
         window.resize(1000, 740)
+        window.pages.widget(0).verticalScrollBar().setValue(0)
         app.processEvents()
+        viewport = window.pages.widget(0).viewport()
+        assert window.stop_button.mapTo(viewport, window.stop_button.rect().bottomRight()).y() <= viewport.height(), "End session action must be visible on a compact screen"
         window.grab().save(str(output/"compact.png"))
         window.search.setText("no-such-candidate")
         window.refresh_sessions()
         assert window.sessions_table.rowCount() == 0
+        assert not window.export_button.isEnabled()
+        window.search.clear()
+        window.selected_session = session_id
+        window.refresh_sessions()
+        window.note.setPlainText("Проверка сохранения перед сменой фильтра")
+        loop = QEventLoop()
+        QTimer.singleShot(800, loop.quit)
+        loop.exec()
+        assert db.session(session_id)["note"] == "Проверка сохранения перед сменой фильтра"
+        window.archive_filter.setCurrentIndex(1)
+        assert db.session(session_id)["note"] == "Проверка сохранения перед сменой фильтра"
+        assert window.selected_session is None and not window.export_button.isEnabled()
+        window.archive_filter.setCurrentIndex(0)
         # Exercise failure handling through the application controller as well.
         window.connect_camera()
         loop = QEventLoop()
@@ -152,6 +196,17 @@ def run(output: Path):
         loop = QEventLoop()
         QTimer.singleShot(300, loop.quit)
         loop.exec()
+        window.launch_demo()
+        loop = QEventLoop()
+        QTimer.singleShot(1500, loop.quit)
+        loop.exec()
+        assert window.session_id is not None and window.mode.currentIndex() == 1
+        assert not window.keyboard.running
+        window.stop_session()
+        loop = QEventLoop()
+        QTimer.singleShot(300, loop.quit)
+        loop.exec()
+        result["product_flows"] = ["presets", "journal_filters", "timeline_selection", "review_progress", "demo_statistics", "one_click_demo", "note_autosave", "compact_actions"]
         result["failure_recovery"] = True
         window.close()
         result["ok"] = True

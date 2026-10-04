@@ -40,8 +40,7 @@ def main():
     window = MainWindow(db, Settings.load(root/"settings.json"))
     window.show()
     if args.demo:
-        window.mode.setCurrentIndex(1)
-        window.connect_camera()
+        window.launch_demo()
     try:
         return app.exec()
     finally:

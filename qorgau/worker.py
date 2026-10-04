@@ -89,16 +89,16 @@ def demo_frame(elapsed):
     elif 32 <= phase < 39:
         yaw = 42.0
     window = 41 <= phase < 46
-    frame = np.full((480, 640, 3), (43, 56, 53), dtype=np.uint8)
+    frame = np.full((480, 640, 3), (42, 29, 17), dtype=np.uint8)
     for x in range(0, 640, 40):
-        cv2.line(frame, (x, 0), (x, 480), (51, 65, 62), 1)
+        cv2.line(frame, (x, 0), (x, 480), (64, 46, 28), 1)
     for y in range(0, 480, 40):
-        cv2.line(frame, (0, y), (640, y), (51, 65, 62), 1)
+        cv2.line(frame, (0, y), (640, y), (64, 46, 28), 1)
     boxes = []
     for i in range(people):
         x = 220 if i == 0 else 455
-        cv2.circle(frame, (x+60, 160), 43, (143, 175, 161), -1)
-        cv2.ellipse(frame, (x+60, 350), (82, 130), 0, 180, 360, (101, 132, 120), -1)
+        cv2.circle(frame, (x+60, 160), 43, (218, 179, 132), -1)
+        cv2.ellipse(frame, (x+60, 350), (82, 130), 0, 180, 360, (179, 126, 79), -1)
         boxes.append(("person", 0.96, (x-25, 105, x+145, 400)))
     if phones:
         cv2.rectangle(frame, (362, 258), (401, 333), (170, 200, 230), -1)
