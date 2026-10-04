@@ -1,0 +1,17 @@
+.venv/
+.export-venv/
+.cache/
+Ultralytics/
+__pycache__/
+*.pyc
+build/
+dist/
+data/
+models/*.pt
+models/*.onnx
+models/*.task
+artifacts/
+*.spec
+.env
+.env.*
+!.env.example

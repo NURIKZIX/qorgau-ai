@@ -1,0 +1,6 @@
+PySide6-Essentials>=6.8,<7
+opencv-contrib-python==4.11.0.86
+# 0.10.35 wheel introduced native telemetry; keep the offline-compatible release.
+mediapipe==0.10.21
+onnxruntime>=1.20,<2
+numpy>=1.26,<2
